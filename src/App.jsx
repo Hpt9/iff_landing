@@ -1,15 +1,12 @@
 import "./App.css";
-import logo from "../public/logo1.svg";
+
 import logo2 from "../public/logo2.svg";
-import { eventData } from "./components/data";
 import { Card } from "./components/card";
 import { IoIosPhonePortrait } from "react-icons/io";
 
 import { FaInstagram } from "react-icons/fa";
 import { FaFacebookF } from "react-icons/fa";
 import { FaYoutube } from "react-icons/fa";
-import { FaRegCalendarAlt } from "react-icons/fa";
-import { GoLocation } from "react-icons/go";
 import { TbCalendarFilled } from "react-icons/tb";
 import { IoLocationOutline } from "react-icons/io5";
 import { useState, useEffect, useRef } from "react";
@@ -31,6 +28,25 @@ function formatDateToYMDLocal(date) {
 }
 
 function App() {
+  // API data states
+  const [eventData, setEventData] = useState([]);
+  const [eventsByCategory, setEventsByCategory] = useState([]);
+  const [rightNowEvents, setRightNowEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // Settings states
+  const [settings, setSettings] = useState({
+    
+    button_text: "Son Tədbir haqqında",
+    cover_image: "../public/cover.svg",
+    phone: "+994 51 634 85 96",
+    location: "Azərbaycan, Bakı şəhəri, Xocalı prospekti, İbis Hotel",
+    fb: "https://www.facebook.com/iif.birgekod.az",
+    instagram: "https://www.instagram.com/iif.birgekod.az",
+    youtube: "https://www.youtube.com/@iif.birgekod"
+  });
+
   // Pending (input) states
   const [pendingSearch, setPendingSearch] = useState("");
   const [pendingDate, setPendingDate] = useState(null);
@@ -49,13 +65,123 @@ function App() {
   const locationDropdownRefDesktop = useRef(null);
   const [selectedLocation, setSelectedLocation] = useState(null);
 
+  // Fetch settings from API
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const response = await fetch("https://iifapi.tw1.ru/api/settings");
+        
+        if (!response.ok) {
+          throw new Error("Failed to fetch settings");
+        }
+        
+        const result = await response.json();
+        
+        // Transform settings array to object
+        const settingsObj = {};
+        if (Array.isArray(result)) {
+          result.forEach((item) => {
+            settingsObj[item.key] = item.value;
+          });
+        }
+        
+        setSettings((prev) => ({
+          ...prev,
+          ...settingsObj
+        }));
+      } catch (err) {
+        console.error("Error fetching settings:", err);
+        // Keep default values on error
+      }
+    };
+    
+    fetchSettings();
+  }, []);
+
+  // Fetch events from API
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const response = await fetch("https://iifapi.tw1.ru/api/events");
+        
+        if (!response.ok) {
+          throw new Error("Failed to fetch events");
+        }
+        
+        const result = await response.json();
+        
+        // Transform API data to match expected format
+        const transformedEvents = [];
+        const categorizedEvents = [];
+        const upcomingEvents = [];
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        if (result.data && Array.isArray(result.data)) {
+          result.data.forEach((category) => {
+            if (category.events && Array.isArray(category.events)) {
+              const categoryEvents = [];
+              
+              category.events.forEach((event, index) => {
+                const eventDate = new Date(event.date);
+                eventDate.setHours(0, 0, 0, 0);
+                
+                const transformedEvent = {
+                  id: `${category.name}-${index}`,
+                  title: event.address_name,
+                  date: event.date,
+                  time: event.time,
+                  imagePath: event.photo,
+                  link: event.url,
+                  location: event.address_name,
+                  category: category.name,
+                };
+                
+                transformedEvents.push(transformedEvent);
+                categoryEvents.push(transformedEvent);
+                
+                // Add all events from "Yeni Tədbir" category to upcoming events
+                if (category.name === "Yeni Tədbir") {
+                  upcomingEvents.push(transformedEvent);
+                }
+              });
+              
+              // Store category with its events
+              if (categoryEvents.length > 0) {
+                categorizedEvents.push({
+                  name: category.name,
+                  events: categoryEvents.sort((a, b) => new Date(b.date) - new Date(a.date))
+                });
+              }
+            }
+          });
+        }
+        
+        setEventData(transformedEvents);
+        setEventsByCategory(categorizedEvents);
+        setRightNowEvents(upcomingEvents);
+      } catch (err) {
+        setError(err.message);
+        console.error("Error fetching events:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchEvents();
+  }, []);
+
   // Sort events by date descending and get the latest event
   const sortedEvents = [...eventData].sort(
     (a, b) => new Date(b.date) - new Date(a.date)
   );
   const latestEvent = sortedEvents[0];
-  // console.log(latestEvent);
-  // const otherEvents = sortedEvents.slice(1); // This line is removed
+  const latestPastEvent = sortedEvents.find(
+    (event) => event.category !== "Yeni Tədbir"
+  );
+  const buttonEvent = latestPastEvent || latestEvent;
 
   // When user clicks Axtar
   const applyFilters = () => {
@@ -75,13 +201,45 @@ function App() {
     setSelectedLocation(null);
   };
 
-  // Filtering logic uses only applied states
+  // Filtering logic uses only applied states - for all events (used in location/date filters)
   const filteredEventsByDate = sortedEvents.filter((event) => {
     const matchesSearch = event.title.toLowerCase().includes(search.toLowerCase());
     const matchesDate = selectedDate ? event.date === selectedDate : true;
     const matchesLocation = selectedLocation ? event.location === selectedLocation : true;
     return matchesSearch && matchesDate && matchesLocation;
   });
+  
+  // Get all filtered events grouped by category (excluding "Yeni Tədbir")
+  const filteredCategories = eventsByCategory
+    .filter(category => category.name !== "Yeni Tədbir")
+    .map(category => ({
+      ...category,
+      events: category.events.filter((event) => {
+        const matchesSearch = event.title.toLowerCase().includes(search.toLowerCase());
+        const matchesDate = selectedDate ? event.date === selectedDate : true;
+        const matchesLocation = selectedLocation ? event.location === selectedLocation : true;
+        return matchesSearch && matchesDate && matchesLocation;
+      })
+    }))
+    .filter(category => category.events.length > 0);
+  
+  // Flatten all filtered events for pagination
+  const allFilteredEvents = filteredCategories.flatMap(category => category.events);
+  
+  // Calculate pagination for all events
+  const totalPages = Math.ceil(allFilteredEvents.length / pageSize);
+  const paginatedEvents = allFilteredEvents.slice(
+    (page - 1) * pageSize,
+    page * pageSize
+  );
+  
+  // Group paginated events back by category
+  const paginatedEventsByCategory = filteredCategories.map(category => ({
+    ...category,
+    events: category.events.filter(event => 
+      paginatedEvents.some(pe => pe.id === event.id)
+    )
+  })).filter(category => category.events.length > 0);
 
   // Filtered locations for dropdown (only those with events for pending date)
   const filteredLocations = Array.from(
@@ -110,16 +268,9 @@ function App() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // Calculate paginated events
-  const totalPages = Math.ceil(filteredEventsByDate.length / pageSize);
-  const paginatedEvents = filteredEventsByDate.slice(
-    (page - 1) * pageSize,
-    page * pageSize
-  );
-
   useEffect(() => {
     if (page > totalPages) setPage(1);
-  }, [filteredEventsByDate, page, totalPages]);
+  }, [allFilteredEvents, page, totalPages]);
 
   // Close datepicker on outside click
   useEffect(() => {
@@ -186,7 +337,7 @@ function App() {
       <motion.div
         className="hero h-[620px] px-[16px] md:px-[32px] xl:px-[108px] py-[30px] relative bg-cover bg-center"
         style={{
-          backgroundImage: `url(../public/cover.svg)`,
+          backgroundImage: `url(${settings.cover_image})`,
         }}
         initial={{ y: -40, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -194,17 +345,19 @@ function App() {
       >
         <div className="header flex justify-between h-[41px]">
           <img
-            src={logo}
+            src={settings.icon}
             alt="logo"
             className="w-[64px] md:w-[100px] h-[64px] md:h-[100px]"
           />
-          <a
-            href={latestEvent.link}
-            target="_blank"
-            className="text-[#FFFFFF] w-[189px] md:w-[189px] h-[38px] md:h-[41px] font-medium bg-[#42AB5D] border border-[#42AB5D] rounded-[100px] px-[15px] py-[10px] flex justify-center items-center hover:bg-white hover:text-[#42AB5D] transition-all duration-300"
-          >
-            Son Tədbir haqqında
-          </a>
+          {buttonEvent && (
+            <a
+              href={buttonEvent.link}
+              target="_blank"
+              className="text-[#FFFFFF] w-[189px] md:w-[189px] h-[38px] md:h-[41px] font-medium bg-[#42AB5D] border border-[#42AB5D] rounded-[100px] px-[15px] py-[10px] flex justify-center items-center hover:bg-white hover:text-[#42AB5D] transition-all duration-300"
+            >
+              {settings.button_text}
+            </a>
+          )}
         </div>
         {/* <p className="text-[#FFFFFF] md:w-[466px] lg:w-[700px] text-3xl md:text-[64px] font-bold absolute left-4 md:left-[108px] bottom-20 md:bottom-[100px] max-w-[700px] drop-shadow-lg">
           {latestEvent.title}
@@ -437,38 +590,83 @@ function App() {
       <div className="px-[16px] md:px-[32px] xl:px-[108px] pt-[102px] bg-[url('../public/bg-image.svg')] bg-cover bg-center flex flex-col 2xl:items-center">
         <div className="flex flex-col justify-between h-[calc(100vh-795px)] min-h-fit">
           <div>
-            <p className="text-[#252525] text-[16px] md:text-[32px] font-medium mt-[16px] md:mt-[0px] md:mb-[32px] mb-[16px] max-w-[1648px] 2xl:min-w-[1361px]">
-              Sonuncu Tədbirlər
-            </p>
-            <motion.div
-              className="event-container flex  max-w-[1648px]"
-              variants={{ visible: { transition: { staggerChildren: 0.08 } } }}
-              initial="hidden"
-              animate="visible"
-            >
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={page} // key on page for animation
-                  className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-x-[16px] gap-y-[16px] md:gap-x-[24px] md:gap-y-[24px]"
-                  initial={{ opacity: 0, y: 30 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -30 }}
-                  transition={{ duration: 0.4 }}
-                >
-                  {paginatedEvents.length === 0 ? (
-                    <motion.div className="col-span-full text-center text-gray-400 font-semibold py-12" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            {loading ? (
+              <div className="text-center text-gray-500 font-semibold py-12">
+                Yüklənir...
+              </div>
+            ) : error ? (
+              <div className="text-center text-red-500 font-semibold py-12">
+                Xəta: {error}
+              </div>
+            ) : (
+              <>
+                {rightNowEvents && rightNowEvents.length > 0 && (
+                  <>
+                    <p className="text-[#252525] text-[16px] md:text-[32px] font-medium mt-[16px] md:mt-[0px] md:mb-[32px] mb-[16px] max-w-[1648px] 2xl:min-w-[1361px]">
+                      Növbəti Tədbir
+                    </p>
+                    <motion.div
+                      className="event-container flex max-w-[1648px] mb-[32px]"
+                      variants={{ visible: { transition: { staggerChildren: 0.08 } } }}
+                      initial="hidden"
+                      animate="visible"
+                    >
+                      <AnimatePresence>
+                        <motion.div
+                          className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-x-[16px] gap-y-[16px] md:gap-x-[24px] md:gap-y-[24px]"
+                          initial={{ opacity: 0, y: 30 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -30 }}
+                          transition={{ duration: 0.4 }}
+                        >
+                          {rightNowEvents.map((event) => (
+                            <Card key={event.id} event={event} />
+                          ))}
+                        </motion.div>
+                      </AnimatePresence>
+                    </motion.div>
+                  </>
+                )}
+                {paginatedEventsByCategory.length > 0 ? (
+                  paginatedEventsByCategory.map((category) => (
+                    <div key={category.name} className="mb-[48px]">
+                      <p className="text-[#252525] text-[16px] md:text-[32px] font-medium mt-[16px] md:mt-[0px] md:mb-[32px] mb-[16px] max-w-[1648px] 2xl:min-w-[1361px]">
+                        {category.name}
+                      </p>
+                      <motion.div
+                        className="event-container flex max-w-[1648px]"
+                        variants={{ visible: { transition: { staggerChildren: 0.08 } } }}
+                        initial="hidden"
+                        animate="visible"
+                      >
+                        <AnimatePresence mode="wait">
+                          <motion.div
+                            key={page}
+                            className="w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-x-[16px] gap-y-[16px] md:gap-x-[24px] md:gap-y-[24px]"
+                            initial={{ opacity: 0, y: 30 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -30 }}
+                            transition={{ duration: 0.4 }}
+                          >
+                            {category.events.map((event) => (
+                              <Card key={event.id} event={event} />
+                            ))}
+                          </motion.div>
+                        </AnimatePresence>
+                      </motion.div>
+                    </div>
+                  ))
+                ) : (
+                  !loading && !error && (
+                    <motion.div className="col-span-full text-center text-gray-400 font-semibold py-12" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                       Belə tədbir baş verməmişdir
                     </motion.div>
-                  ) : (
-                    paginatedEvents.map((event) => (
-                      <Card key={event.id} event={event} />
-                    ))
-                  )}
-                </motion.div>
-              </AnimatePresence>
-            </motion.div>
-            {/* Pagination controls */}
-            {totalPages > 1 && (
+                  )
+                )}
+              </>
+            )}
+            {/* Pagination controls - shared across all categories */}
+            {!loading && !error && totalPages > 1 && (
               <div className="flex justify-center mt-8 gap-2">
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -517,7 +715,7 @@ function App() {
                     Əlaqə Saxlayın
                   </p>
                   <p className="text-[#252525] text-[20px] font-bold">
-                    +994 51 634 85 96
+                    {settings.phone}
                   </p>
                 </div>
               </div>
@@ -532,27 +730,30 @@ function App() {
                   Tədbirin ünvanı:
                 </p>
                 <p className="text-[#72678F] text-[16px] font-bold w-[174px] md:w-[250px]">
-                  Azərbaycan, Bakı şəhəri, Xocalı prospekti, İbis Hotel
+                  {settings.location}
                 </p>
               </div>
               <div className="flex gap-x-[6px] flex-row items-end">
                 <a
-                  href="https://www.facebook.com/iif.birgekod.az"
+                  href={settings.fb}
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="flex gap-x-[13px] items-center justify-center w-[34px] h-[34px] md:w-[42px] md:h-[42px] bg-[#EFEAFE] rounded-full group hover:bg-[#42AB5D] transition-all duration-300"
                 >
                   <FaFacebookF className="text-[#72678F] text-[16px] md:text-[22px] group-hover:text-white transition-all duration-300" />
                 </a>
                 <a
-                  href="https://www.instagram.com/iif.birgekod.az"
+                  href={settings.instagram}
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="flex gap-x-[13px] items-center justify-center w-[34px] h-[34px] md:w-[42px] md:h-[42px] bg-[#EFEAFE] rounded-full group hover:bg-[#42AB5D] transition-all duration-300"
                 >
                   <FaInstagram className="text-[#72678F] text-[16px] md:text-[22px] group-hover:text-white transition-all duration-300" />
                 </a>
                 <a
-                  href="https://www.youtube.com/@iif.birgekod"
+                  href={settings.youtube}
                   target="_blank"
+                  rel="noopener noreferrer"
                   className="flex gap-x-[13px] items-center justify-center w-[34px] h-[34px] md:w-[42px] md:h-[42px] bg-[#EFEAFE] rounded-full group hover:bg-[#42AB5D] transition-all duration-300"
                 >
                   <FaYoutube className="text-[#72678F] text-[16px] md:text-[22px] group-hover:text-white transition-all duration-300" />

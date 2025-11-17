@@ -16,6 +16,20 @@ export const eventData = [
     imagePath: "../marriot.png",
     link: "https://fevral2025iif.birgekod.az/",
     location: "Baku Marriott Hotel Boulevard",
+  },
+  {
+    id: 101,
+    title: "ibis Hotel",
+    date: "2025-10-03",
+    time: "19:00 - 22:00",
+    imagePath: "../ibis.png",
+    link: "https://oktyabr2025iif.birgekod.az",
+    location: "ibis Hotel",
   }
+];
+
+export const rightNowEvents = [
+
+  // Add/remove items as needed
 ];
 

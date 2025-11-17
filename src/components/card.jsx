@@ -5,8 +5,10 @@ export const Card = ({ event }) => {
   return (
     <a href={event.link} target="_blank" rel="noopener noreferrer" className="bg-white rounded-2xl shadow-lg overflow-hidden w-full max-w-[100%] md:max-w-[370px] flex flex-col h-[268px] relative group cursor-pointer">
       <img src={event.imagePath} alt={event.title} className="w-full h-[215px] object-cover group-hover:scale-115 transition-all duration-400" />
-      <div className="flex flex-col h-[85px] p-[16px] rounded-[16px] bg-[#F5F5F5] absolute bottom-0 left-0 right-0">
-        <div className="text-[16px] font-medium text-[#252525]">{event.title}</div>
+      <div className="flex flex-col h-[110px] p-[16px] rounded-[16px] bg-[#F5F5F5] absolute bottom-0 left-0 right-0">
+        <div className="text-[16px] font-medium text-[#252525]">{event.title} </div>
+        <div className="text-[16px] font-medium text-[#252525]">{event.time}</div>
+        
         <div className="flex items-center justify-between">
           <div className="flex items-center text-gray-500 text-base font-medium gap-2">
             {/* Calendar Icon (Heroicons outline) */}
